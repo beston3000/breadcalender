@@ -262,6 +262,7 @@
          * Renders the calendar for the month of the given date
          */
         function renderCalendar() {
+            updateNavigationButtons(); // Control button visibility
             if (isNaN(currentDate.getTime())) {
                 console.error("Invalid date provided to renderCalendar. Resetting to today.");
                 currentDate = new Date();
@@ -315,6 +316,28 @@
                 }
 
                 calendarGridEl.appendChild(dayCell);
+            }
+        }
+
+        /**
+         * Hides or shows navigation buttons to restrict the calendar view.
+         */
+        function updateNavigationButtons() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth(); // 0-indexed (7=Aug, 11=Dec)
+
+            // Hide "Prev" button if the current view is August 2025 or earlier.
+            if (year <= 2025 && month <= 7) {
+                prevMonthBtn.style.visibility = 'hidden';
+            } else {
+                prevMonthBtn.style.visibility = 'visible';
+            }
+
+            // Hide "Next" button if the current view is December 2025 or later.
+            if (year >= 2025 && month >= 11) {
+                nextMonthBtn.style.visibility = 'hidden';
+            } else {
+                nextMonthBtn.style.visibility = 'visible';
             }
         }
         
@@ -392,8 +415,7 @@
         }
 
         /**
-         * **MODIFIED**: This function now populates the schedule for all Sundays
-         * for the remainder of 2025, cycling through the people list.
+         * Populates the schedule for all Sundays for the remainder of 2025.
          */
         async function populateInitialSchedule() {
             console.log("Database is empty. Populating initial schedule for the rest of 2025...");
