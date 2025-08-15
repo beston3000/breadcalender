@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Church Bread Calendar</title>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f9;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 20px;
+            color: #333;
+        }
+
+        #app-container {
+            width: 95%;
+            max-width: 900px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+
+        #calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        #calendar-header h2 {
+            margin: 0;
+            font-size: 1.5em;
+        }
+
+        #calendar-header button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        #calendar-header button:hover {
+            background-color: #2980b9;
+        }
+
+        #calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 5px;
+        }
+
+        .day, .weekday-header {
+            padding: 10px;
+            text-align: right;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .weekday-header {
+            font-weight: bold;
+            text-align: center;
+            min-height: auto;
+            background-color: #ecf0f1;
+        }
+
+        .day-number {
+            font-weight: bold;
+        }
+
+        .day.empty {
+            background-color: #fafafa;
+            border: 1px solid #f0f0f0;
+        }
+
+        .day.sunday {
+            background-color: #fffbe6; /* Light yellow for Sundays */
+            cursor: pointer;
+            border: 1px solid #f1c40f;
+        }
+
+        .day.sunday:hover {
+            background-color: #fdf2b3;
+        }
+
+        .assignment {
+            margin-top: 5px;
+            padding: 5px;
+            background-color: #2ecc71;
+            color: white;
+            border-radius: 4px;
+            font-size: 0.8em;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        /* Modal Styles */
+        .modal {
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-hidden {
+            display: none;
+        }
+
+        .modal-content {
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 400px;
+            position: relative;
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #person-select {
+            width: 100%;
+            padding: 10px;
+            margin-top: 15px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        .modal-buttons {
+            margin-top: 20px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .modal-buttons button {
+            padding: 10px 20px;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+        }
+
+        #save-btn {
+            background-color: #2ecc71;
+            color: white;
+        }
+
+        #remove-btn {
+            background-color: #e74c3c;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <h1>Church Bread Calendar</h1>
+        <div id="calendar-header">
+            <button id="prev-month-btn">&lt; Prev</button>
+            <h2 id="month-year"></h2>
+            <button id="next-month-btn">Next &gt;</button>
+        </div>
+        <div id="calendar-grid"></div>
+    </div>
+
+    <div id="edit-modal" class="modal-hidden">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h3>Assign Bread for <span id="modal-date-display"></span></h3>
+            <select id="person-select"></select>
+            <div class="modal-buttons">
+                <button id="save-btn">Save</button>
+                <button id="remove-btn">Remove Assignment</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import the functions you need from the SDKs you need
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, collection, doc, getDocs, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyD4lW3dIY5mlBnS33CsRGqdRPXO78mlxik",
+            authDomain: "breadcalender.firebaseapp.com",
+            projectId: "breadcalender",
+            storageBucket: "breadcalender.firebasestorage.app",
+            messagingSenderId: "646676946145",
+            appId: "1:646676946145:web:c66bbf8074e0ee537a2ba0",
+            measurementId: "G-0V8Y8DJY3V"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // --- CALENDAR APPLICATION LOGIC ---
+
+        // --- CONFIGURATION ---
+        const peopleList = [
+            "Allens", "Alexanders", "Crisps", "Willits", "Davis’s", 
+            "Collins", "Halladay", "Taylors", "Labontes", "Howells", "Rydells"
+        ];
+        const assignmentsCollection = collection(db, "breadAssignments");
+
+        // --- DOM ELEMENTS ---
+        const monthYearEl = document.getElementById('month-year');
+        const calendarGridEl = document.getElementById('calendar-grid');
+        const prevMonthBtn = document.getElementById('prev-month-btn');
+        const nextMonthBtn = document.getElementById('next-month-btn');
+        const modal = document.getElementById('edit-modal');
+        const modalDateDisplay = document.getElementById('modal-date-display');
+        const personSelect = document.getElementById('person-select');
+        const saveBtn = document.getElementById('save-btn');
+        const removeBtn = document.getElementById('remove-btn');
+        const closeBtn = document.querySelector('.close-btn');
+
+        // --- STATE ---
+        let currentDate = new Date();
+        let assignments = {}; // A cache for assignments: { 'YYYY-MM-DD': 'Name' }
+        let currentlyEditingDate = null;
+
+        // --- FUNCTIONS ---
+
+        /**
+         * Renders the calendar for the month of the given date
+         */
+        async function renderCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+
+            monthYearEl.textContent = `${currentDate.toLocaleString('default', { month: 'long' })} ${year}`;
+            calendarGridEl.innerHTML = '';
+
+            const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            weekdays.forEach(day => {
+                const headerEl = document.createElement('div');
+                headerEl.classList.add('weekday-header');
+                headerEl.textContent = day;
+                calendarGridEl.appendChild(headerEl);
+            });
+
+            const firstDayOfMonth = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            for (let i = 0; i < firstDayOfMonth; i++) {
+                const emptyCell = document.createElement('div');
+                emptyCell.classList.add('day', 'empty');
+                calendarGridEl.appendChild(emptyCell);
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dayCell = document.createElement('div');
+                dayCell.classList.add('day');
+                
+                const dayNumber = document.createElement('div');
+                dayNumber.classList.add('day-number');
+                dayNumber.textContent = day;
+                dayCell.appendChild(dayNumber);
+
+                const date = new Date(year, month, day);
+                const dateString = toYYYYMMDD(date);
+
+                if (date.getDay() === 0) { // 0 is Sunday
+                    dayCell.classList.add('sunday');
+                    dayCell.addEventListener('click', () => openEditModal(dateString));
+                }
+
+                if (assignments[dateString]) {
+                    const assignmentEl = document.createElement('div');
+                    assignmentEl.classList.add('assignment');
+                    assignmentEl.textContent = assignments[dateString];
+                    dayCell.appendChild(assignmentEl);
+                }
+
+                calendarGridEl.appendChild(dayCell);
+            }
+        }
+
+        /**
+         * Opens the modal to edit an assignment for a specific date
+         */
+        function openEditModal(dateString) {
+            currentlyEditingDate = dateString;
+            modalDateDisplay.textContent = new Date(dateString + 'T00:00:00').toLocaleDateString();
+
+            personSelect.innerHTML = '<option value="">-- Unassigned --</option>';
+            peopleList.forEach(person => {
+                const option = document.createElement('option');
+                option.value = person;
+                option.textContent = person;
+                personSelect.appendChild(option);
+            });
+
+            personSelect.value = assignments[dateString] || "";
+
+            modal.classList.remove('modal-hidden');
+            modal.classList.add('modal');
+        }
+
+        function closeEditModal() {
+            modal.classList.add('modal-hidden');
+            modal.classList.remove('modal');
+            currentlyEditingDate = null;
+        }
+
+        async function saveAssignment() {
+            if (!currentlyEditingDate) return;
+            const selectedPerson = personSelect.value;
+            const docRef = doc(db, "breadAssignments", currentlyEditingDate);
+            try {
+                if (selectedPerson) {
+                    await setDoc(docRef, { name: selectedPerson });
+                    assignments[currentlyEditingDate] = selectedPerson;
+                } else {
+                    await deleteDoc(docRef);
+                    delete assignments[currentlyEditingDate];
+                }
+                closeEditModal();
+                renderCalendar();
+            } catch (error) {
+                console.error("Error saving assignment: ", error);
+                alert("Could not save assignment. Check the console for errors.");
+            }
+        }
+
+        async function removeAssignment() {
+            personSelect.value = "";
+            await saveAssignment();
+        }
+
+        async function fetchAllAssignments() {
+            try {
+                const querySnapshot = await getDocs(assignmentsCollection);
+                assignments = {};
+                querySnapshot.forEach(doc => {
+                    assignments[doc.id] = doc.data().name;
+                });
+                return querySnapshot.empty;
+            } catch (error) {
+                console.error("Error fetching assignments: ", error);
+            }
+        }
+
+        async function populateInitialSchedule() {
+            console.log("Database is empty. Populating initial schedule...");
+            let startDate = new Date('2025-08-17T12:00:00Z'); // Start date
+            
+            for (const person of peopleList) {
+                const dateString = toYYYYMMDD(startDate);
+                const docRef = doc(db, "breadAssignments", dateString);
+                try {
+                    await setDoc(docRef, { name: person });
+                    console.log(`Set initial assignment for ${person} on ${dateString}`);
+                } catch(error) {
+                    console.error("Failed to set initial assignment:", error);
+                }
+                startDate.setDate(startDate.getDate() + 7);
+            }
+        }
+
+        function toYYYYMMDD(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        // --- EVENT LISTENERS ---
+        prevMonthBtn.addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
+        });
+
+        nextMonthBtn.addEventListener('click', () => {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        });
+
+        closeBtn.addEventListener('click', closeEditModal);
+        saveBtn.addEventListener('click', saveAssignment);
+        removeBtn.addEventListener('click', removeAssignment);
+        window.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeEditModal();
+            }
+        });
+
+        // --- INITIALIZATION ---
+        async function initializeApp() {
+            const isCollectionEmpty = await fetchAllAssignments();
+            if (isCollectionEmpty) {
+                await populateInitialSchedule();
+                await fetchAllAssignments(); // Re-fetch after populating
+            }
+            // Navigate to August 2025 on first load to show the data
+            currentDate = new Date('2025-08-01T12:00:00Z');
+            renderCalendar();
+        }
+
+        initializeApp();
+    </script>
+    
+</body>
+</html>
