@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Church Bread Calendar</title>
     
+    <!-- CSS STYLES -->
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -14,6 +15,7 @@
             align-items: flex-start;
             padding: 20px;
             color: #333;
+            margin: 0;
         }
 
         #app-container {
@@ -40,6 +42,8 @@
         #calendar-header h2 {
             margin: 0;
             font-size: 1.5em;
+            text-align: center;
+            flex-grow: 1;
         }
 
         #calendar-header button {
@@ -70,6 +74,7 @@
             min-height: 80px;
             display: flex;
             flex-direction: column;
+            box-sizing: border-box;
         }
 
         .weekday-header {
@@ -99,7 +104,7 @@
         }
 
         .assignment {
-            margin-top: 5px;
+            margin-top: auto;
             padding: 5px;
             background-color: #2ecc71;
             color: white;
@@ -107,6 +112,7 @@
             font-size: 0.8em;
             text-align: center;
             font-weight: bold;
+            word-wrap: break-word;
         }
 
         /* Modal Styles */
@@ -190,6 +196,7 @@
         <div id="calendar-grid"></div>
     </div>
 
+    <!-- Modal for editing an assignment -->
     <div id="edit-modal" class="modal-hidden">
         <div class="modal-content">
             <span class="close-btn">&times;</span>
@@ -202,6 +209,7 @@
         </div>
     </div>
 
+    <!-- JAVASCRIPT LOGIC AND FIREBASE CONNECTION -->
     <script type="module">
         // Import the functions you need from the SDKs you need
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -244,7 +252,7 @@
         const closeBtn = document.querySelector('.close-btn');
 
         // --- STATE ---
-        let currentDate = new Date();
+        let currentDate = new Date('2025-08-01');
         let assignments = {}; // A cache for assignments: { 'YYYY-MM-DD': 'Name' }
         let currentlyEditingDate = null;
 
@@ -253,7 +261,12 @@
         /**
          * Renders the calendar for the month of the given date
          */
-        async function renderCalendar() {
+        function renderCalendar() {
+            if (isNaN(currentDate.getTime())) {
+                console.error("Invalid date provided to renderCalendar. Resetting to today.");
+                currentDate = new Date();
+            }
+
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth();
 
@@ -304,13 +317,21 @@
                 calendarGridEl.appendChild(dayCell);
             }
         }
+        
+        function toYYYYMMDD(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
 
-        /**
-         * Opens the modal to edit an assignment for a specific date
-         */
         function openEditModal(dateString) {
             currentlyEditingDate = dateString;
-            modalDateDisplay.textContent = new Date(dateString + 'T00:00:00').toLocaleDateString();
+            const displayDate = new Date(dateString);
+            displayDate.setMinutes(displayDate.getMinutes() + displayDate.getTimezoneOffset());
+            modalDateDisplay.textContent = displayDate.toLocaleDateString(undefined, {
+                year: 'numeric', month: 'long', day: 'numeric'
+            });
 
             personSelect.innerHTML = '<option value="">-- Unassigned --</option>';
             peopleList.forEach(person => {
@@ -348,7 +369,6 @@
                 renderCalendar();
             } catch (error) {
                 console.error("Error saving assignment: ", error);
-                alert("Could not save assignment. Check the console for errors.");
             }
         }
 
@@ -367,28 +387,39 @@
                 return querySnapshot.empty;
             } catch (error) {
                 console.error("Error fetching assignments: ", error);
+                return true;
             }
         }
 
+        /**
+         * **MODIFIED**: This function now populates the schedule for all Sundays
+         * for the remainder of 2025, cycling through the people list.
+         */
         async function populateInitialSchedule() {
-            console.log("Database is empty. Populating initial schedule...");
-            let startDate = new Date('2025-08-17T12:00:00Z'); // Start date
-            
-            for (const person of peopleList) {
-                const dateString = toYYYYMMDD(startDate);
-                const docRef = doc(db, "breadAssignments", dateString);
-                try {
-                    await setDoc(docRef, { name: person });
-                    console.log(`Set initial assignment for ${person} on ${dateString}`);
-                } catch(error) {
-                    console.error("Failed to set initial assignment:", error);
-                }
-                startDate.setDate(startDate.getDate() + 7);
-            }
-        }
+            console.log("Database is empty. Populating initial schedule for the rest of 2025...");
+            let scheduleDate = new Date('2025-08-17');
+            let personIndex = 0;
 
-        function toYYYYMMDD(date) {
-            return date.toISOString().split('T')[0];
+            // Continue adding assignments as long as the year is 2025
+            while (scheduleDate.getFullYear() === 2025) {
+                if (scheduleDate.getDay() === 0) { // Ensure it's a Sunday
+                    const person = peopleList[personIndex % peopleList.length];
+                    const dateString = toYYYYMMDD(scheduleDate);
+                    const docRef = doc(db, "breadAssignments", dateString);
+
+                    try {
+                        await setDoc(docRef, { name: person });
+                        console.log(`Set initial assignment for ${person} on ${dateString}`);
+                    } catch (error) {
+                        console.error(`Failed to set initial assignment for ${person} on ${dateString}:`, error);
+                    }
+                    
+                    personIndex++;
+                }
+                
+                // Move to the next Sunday
+                scheduleDate.setDate(scheduleDate.getDate() + 7);
+            }
         }
 
         // --- EVENT LISTENERS ---
@@ -412,18 +443,16 @@
         });
 
         // --- INITIALIZATION ---
-        async function initializeApp() {
+        async function startCalendarApp() {
             const isCollectionEmpty = await fetchAllAssignments();
             if (isCollectionEmpty) {
                 await populateInitialSchedule();
                 await fetchAllAssignments(); // Re-fetch after populating
             }
-            // Navigate to August 2025 on first load to show the data
-            currentDate = new Date('2025-08-01T12:00:00Z');
             renderCalendar();
         }
 
-        initializeApp();
+        startCalendarApp();
     </script>
     
 </body>
