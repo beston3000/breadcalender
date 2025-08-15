@@ -151,12 +151,17 @@
             cursor: pointer;
         }
 
-        #person-select {
+        #person-select, #custom-name-input {
             width: 100%;
             padding: 10px;
             margin-top: 15px;
             border-radius: 4px;
             border: 1px solid #ccc;
+            box-sizing: border-box;
+        }
+
+        #custom-name-input.hidden {
+            display: none;
         }
 
         .modal-buttons {
@@ -232,6 +237,7 @@
             <span class="close-btn">&times;</span>
             <h3>Assign Bread for <span id="modal-date-display"></span></h3>
             <select id="person-select"></select>
+            <input type="text" id="custom-name-input" class="hidden" placeholder="Enter custom name">
             <div class="modal-buttons">
                 <button id="save-btn">Save</button>
                 <button id="remove-btn">Remove Assignment</button>
@@ -277,6 +283,7 @@
         const modal = document.getElementById('edit-modal');
         const modalDateDisplay = document.getElementById('modal-date-display');
         const personSelect = document.getElementById('person-select');
+        const customNameInput = document.getElementById('custom-name-input');
         const saveBtn = document.getElementById('save-btn');
         const removeBtn = document.getElementById('remove-btn');
         const closeBtn = document.querySelector('.close-btn');
@@ -349,21 +356,16 @@
             }
         }
 
-        /**
-         * Hides or shows navigation buttons to restrict the calendar view.
-         */
         function updateNavigationButtons() {
             const year = currentDate.getFullYear();
             const month = currentDate.getMonth(); // 0-indexed (7=Aug, 11=Dec)
 
-            // Hide "Prev" button if the current view is August 2025 or earlier.
             if (year <= 2025 && month <= 7) {
                 prevMonthBtn.style.visibility = 'hidden';
             } else {
                 prevMonthBtn.style.visibility = 'visible';
             }
 
-            // Hide "Next" button if the current view is December 2025 or later.
             if (year >= 2025 && month >= 11) {
                 nextMonthBtn.style.visibility = 'hidden';
             } else {
@@ -386,6 +388,7 @@
                 year: 'numeric', month: 'long', day: 'numeric'
             });
 
+            // Populate dropdown
             personSelect.innerHTML = '<option value="">-- Unassigned --</option>';
             peopleList.forEach(person => {
                 const option = document.createElement('option');
@@ -393,8 +396,25 @@
                 option.textContent = person;
                 personSelect.appendChild(option);
             });
+            personSelect.innerHTML += '<option value="custom">Custom...</option>';
 
-            personSelect.value = assignments[dateString] || "";
+            // Set initial value
+            const currentAssignment = assignments[dateString];
+            if (currentAssignment) {
+                if (peopleList.includes(currentAssignment)) {
+                    personSelect.value = currentAssignment;
+                    customNameInput.classList.add('hidden');
+                    customNameInput.value = '';
+                } else {
+                    personSelect.value = 'custom';
+                    customNameInput.classList.remove('hidden');
+                    customNameInput.value = currentAssignment;
+                }
+            } else {
+                personSelect.value = "";
+                customNameInput.classList.add('hidden');
+                customNameInput.value = '';
+            }
 
             modal.classList.remove('modal-hidden');
             modal.classList.add('modal');
@@ -408,16 +428,28 @@
 
         async function saveAssignment() {
             if (!currentlyEditingDate) return;
-            const selectedPerson = personSelect.value;
+
+            let nameToSave = personSelect.value;
+            if (nameToSave === 'custom') {
+                nameToSave = customNameInput.value.trim();
+            }
+
+            // Don't save if custom is selected but the input is empty
+            if (!nameToSave) {
+                // If the intention is to remove, use the remove button
+                if (personSelect.value === 'custom' && customNameInput.value.trim() === '') {
+                    console.log("Custom name is empty. Not saving.");
+                    return;
+                }
+                // Otherwise, treat as unassigning
+                await removeAssignment();
+                return;
+            }
+            
             const docRef = doc(db, "breadAssignments", currentlyEditingDate);
             try {
-                if (selectedPerson) {
-                    await setDoc(docRef, { name: selectedPerson });
-                    assignments[currentlyEditingDate] = selectedPerson;
-                } else {
-                    await deleteDoc(docRef);
-                    delete assignments[currentlyEditingDate];
-                }
+                await setDoc(docRef, { name: nameToSave });
+                assignments[currentlyEditingDate] = nameToSave;
                 closeEditModal();
                 renderCalendar();
             } catch (error) {
@@ -426,8 +458,16 @@
         }
 
         async function removeAssignment() {
-            personSelect.value = "";
-            await saveAssignment();
+            if (!currentlyEditingDate) return;
+            const docRef = doc(db, "breadAssignments", currentlyEditingDate);
+            try {
+                await deleteDoc(docRef);
+                delete assignments[currentlyEditingDate];
+                closeEditModal();
+                renderCalendar();
+            } catch (error) {
+                console.error("Error removing assignment: ", error);
+            }
         }
 
         async function fetchAllAssignments() {
@@ -444,17 +484,13 @@
             }
         }
 
-        /**
-         * Populates the schedule for all Sundays for the remainder of 2025.
-         */
         async function populateInitialSchedule() {
             console.log("Database is empty. Populating initial schedule for the rest of 2025...");
             let scheduleDate = new Date('2025-08-17');
             let personIndex = 0;
 
-            // Continue adding assignments as long as the year is 2025
             while (scheduleDate.getFullYear() === 2025) {
-                if (scheduleDate.getDay() === 0) { // Ensure it's a Sunday
+                if (scheduleDate.getDay() === 0) {
                     const person = peopleList[personIndex % peopleList.length];
                     const dateString = toYYYYMMDD(scheduleDate);
                     const docRef = doc(db, "breadAssignments", dateString);
@@ -469,7 +505,6 @@
                     personIndex++;
                 }
                 
-                // Move to the next Sunday
                 scheduleDate.setDate(scheduleDate.getDate() + 7);
             }
         }
@@ -485,6 +520,14 @@
             renderCalendar();
         });
 
+        personSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'custom') {
+                customNameInput.classList.remove('hidden');
+            } else {
+                customNameInput.classList.add('hidden');
+            }
+        });
+
         closeBtn.addEventListener('click', closeEditModal);
         saveBtn.addEventListener('click', saveAssignment);
         removeBtn.addEventListener('click', removeAssignment);
@@ -496,7 +539,6 @@
 
         // --- INITIALIZATION ---
         async function startCalendarApp() {
-            // **NEW**: Logic to set the initial date
             const today = new Date();
             const startDate = new Date('2025-08-01');
             const endDate = new Date('2025-12-31');
@@ -504,16 +546,15 @@
             if (today < startDate) {
                 currentDate = startDate;
             } else if (today > endDate) {
-                currentDate = new Date('2025-12-01'); // Go to Dec 2025
+                currentDate = new Date('2025-12-01');
             } else {
-                // Set to the first day of the current month
                 currentDate = new Date(today.getFullYear(), today.getMonth(), 1);
             }
 
             const isCollectionEmpty = await fetchAllAssignments();
             if (isCollectionEmpty) {
                 await populateInitialSchedule();
-                await fetchAllAssignments(); // Re-fetch after populating
+                await fetchAllAssignments();
             }
             renderCalendar();
         }
